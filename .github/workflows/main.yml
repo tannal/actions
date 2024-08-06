@@ -2,126 +2,206 @@ name: Build LLVM, V8, and SpiderMonkey
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # Run weekly on Mondays at 2 AM UTC
+
+env:
+  CMAKE_VERSION: 3.21.0
+  NINJA_VERSION: 1.10.2
+  PYTHON_VERSION: 3.9
 
 jobs:
   build-llvm:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            llvm_install_cmd: sudo apt-get install -y cmake ninja-build
+          - os: windows-latest
+            llvm_install_cmd: choco install cmake ninja
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
-    - name: Install dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake ninja-build
-    - name: Install dependencies (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        choco install cmake ninja
+    - uses: actions/checkout@v3
+    - name: Cache LLVM build
+      uses: actions/cache@v3
+      with:
+        path: llvm-build
+        key: ${{ runner.os }}-llvm-${{ hashFiles('llvm-project/**') }}
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - name: Install dependencies
+      run: ${{ matrix.llvm_install_cmd }}
     - name: Clone LLVM
-      run: git clone https://github.com/llvm/llvm-project.git
+      run: git clone --depth 1 https://github.com/llvm/llvm-project.git
     - name: Build LLVM
       run: |
-        mkdir llvm-build
+        mkdir -p llvm-build
         cd llvm-build
         cmake ../llvm-project/llvm -G Ninja -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_BUILD_TYPE=Release
         ninja
+    - name: Run LLVM tests
+      run: |
+        cd llvm-build
+        ninja check-llvm
     - name: Upload LLVM artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: llvm-${{ matrix.os }}
         path: llvm-build
+        retention-days: 7
 
   build-v8:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+    - name: Cache V8 build
+      uses: actions/cache@v3
+      with:
+        path: |
+          v8/v8/out.gn
+          ~/.ccache
+        key: ${{ runner.os }}-v8-${{ hashFiles('v8/**') }}
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
     - name: Install dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3 git
+        sudo apt-get install -y git ccache
     - name: Install dependencies (Windows)
       if: matrix.os == 'windows-latest'
-      run: |
-        choco install python git
-    - name: Clone V8
+      run: choco install git python
+    - name: Setup depot_tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
         echo "$PWD/depot_tools" >> $GITHUB_PATH
     - name: Fetch V8
       run: |
-        mkdir v8
-        cd v8
+        mkdir v8 && cd v8
         fetch v8
         cd v8
         git checkout 9.0.257
         gclient sync
-    - name: Build V8 (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        cd v8/v8
-        tools/dev/v8gen.py x64.release
-        ninja -C out.gn/x64.release
-    - name: Build V8 (Windows)
-      if: matrix.os == 'windows-latest'
+    - name: Build V8
       run: |
         cd v8/v8
         python tools/dev/v8gen.py x64.release
         ninja -C out.gn/x64.release
+    - name: Run V8 tests
+      run: |
+        cd v8/v8
+        python tools/run-tests.py --progress=verbose --outdir=out.gn/x64.release
     - name: Upload V8 artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: v8-${{ matrix.os }}
         path: v8/v8/out.gn/x64.release
+        retention-days: 7
 
   build-spidermonkey:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+    - name: Cache SpiderMonkey build
+      uses: actions/cache@v3
+      with:
+        path: mozilla-central/js/src/build_OPT.OBJ
+        key: ${{ runner.os }}-spidermonkey-${{ hashFiles('mozilla-central/**') }}
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
     - name: Install dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3 autoconf2.13 mercurial
+        sudo apt-get install -y autoconf2.13 mercurial
     - name: Install dependencies (Windows)
       if: matrix.os == 'windows-latest'
-      run: |
-        choco install python autoconf213 mercurial
+      run: choco install python mercurial
     - name: Clone mozilla-central
-      run: hg clone https://hg.mozilla.org/mozilla-central
-    - name: Build SpiderMonkey (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
+      run: hg clone --stream https://hg.mozilla.org/mozilla-central
+    - name: Build SpiderMonkey
       run: |
         cd mozilla-central/js/src
         autoconf2.13
-        mkdir build_OPT.OBJ
-        cd build_OPT.OBJ
+        mkdir -p build_OPT.OBJ && cd build_OPT.OBJ
         ../configure --enable-optimize --disable-debug
-        make
-    - name: Build SpiderMonkey (Windows)
-      if: matrix.os == 'windows-latest'
+        make -j$(nproc)
+    - name: Run SpiderMonkey tests
       run: |
-        cd mozilla-central/js/src
-        autoconf213
-        mkdir build_OPT.OBJ
-        cd build_OPT.OBJ
-        ../configure --enable-optimize --disable-debug
-        mozmake
+        cd mozilla-central/js/src/build_OPT.OBJ
+        make check
     - name: Upload SpiderMonkey artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: spidermonkey-${{ matrix.os }}
         path: mozilla-central/js/src/build_OPT.OBJ
+        retention-days: 7
+
+  security-scan:
+    needs: [build-llvm, build-v8, build-spidermonkey]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Run security scan
+      run: |
+        # Add your security scanning tool here
+        echo "Running security scan..."
+
+  create-release:
+    needs: [build-llvm, build-v8, build-spidermonkey, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v3
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}-${{ github.sha }}
+        release_name: Release ${{ github.ref }}-${{ github.sha }}
+        draft: false
+        prerelease: false
+    - uses: actions/download-artifact@v3
+    - name: Upload Release Assets
+      run: |
+        for artifact in */; do
+          zip -r "${artifact%/}.zip" "$artifact"
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Content-Type: application/zip" \
+               --data-binary @"${artifact%/}.zip" \
+               "${{ steps.create_release.outputs.upload_url }}?name=${artifact%/}.zip"
+        done
+
+  cleanup:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Delete old releases
+      uses: dev-drprasad/delete-older-releases@v0.2.0
+      with:
+        keep_latest: 5
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
