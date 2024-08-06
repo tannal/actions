@@ -1,0 +1,127 @@
+name: Build LLVM, V8, and SpiderMonkey
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-llvm:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build
+    - name: Install dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install cmake ninja
+    - name: Clone LLVM
+      run: git clone https://github.com/llvm/llvm-project.git
+    - name: Build LLVM
+      run: |
+        mkdir llvm-build
+        cd llvm-build
+        cmake ../llvm-project/llvm -G Ninja -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_BUILD_TYPE=Release
+        ninja
+    - name: Upload LLVM artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: llvm-${{ matrix.os }}
+        path: llvm-build
+
+  build-v8:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 git
+    - name: Install dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install python git
+    - name: Clone V8
+      run: |
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        echo "$PWD/depot_tools" >> $GITHUB_PATH
+    - name: Fetch V8
+      run: |
+        mkdir v8
+        cd v8
+        fetch v8
+        cd v8
+        git checkout 9.0.257
+        gclient sync
+    - name: Build V8 (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd v8/v8
+        tools/dev/v8gen.py x64.release
+        ninja -C out.gn/x64.release
+    - name: Build V8 (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd v8/v8
+        python tools/dev/v8gen.py x64.release
+        ninja -C out.gn/x64.release
+    - name: Upload V8 artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: v8-${{ matrix.os }}
+        path: v8/v8/out.gn/x64.release
+
+  build-spidermonkey:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 autoconf2.13 mercurial
+    - name: Install dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install python autoconf213 mercurial
+    - name: Clone mozilla-central
+      run: hg clone https://hg.mozilla.org/mozilla-central
+    - name: Build SpiderMonkey (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd mozilla-central/js/src
+        autoconf2.13
+        mkdir build_OPT.OBJ
+        cd build_OPT.OBJ
+        ../configure --enable-optimize --disable-debug
+        make
+    - name: Build SpiderMonkey (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd mozilla-central/js/src
+        autoconf213
+        mkdir build_OPT.OBJ
+        cd build_OPT.OBJ
+        ../configure --enable-optimize --disable-debug
+        mozmake
+    - name: Upload SpiderMonkey artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: spidermonkey-${{ matrix.os }}
+        path: mozilla-central/js/src/build_OPT.OBJ
