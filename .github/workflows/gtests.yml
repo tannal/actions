@@ -24,7 +24,6 @@ jobs:
       uses: lukka/get-cmake@latest
 
     - name: Build GTest (Unix)
-      if: runner.os != 'Windows'
       run: |
         git clone --depth 1 --branch ${{ steps.gtest_version.outputs.version }} https://github.com/google/googletest.git
         cd googletest
