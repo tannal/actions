@@ -50,10 +50,10 @@ jobs:
         release_name: Google Test ${{ steps.gtest_version.outputs.version }}
         draft: false
         prerelease: false
-        asset: patch
 
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
+      if: always()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
