@@ -39,7 +39,9 @@ jobs:
         cmake --build . --config Release
         pwd
         ls
-        cp -r ../include .
+        ls ../
+        ls ../include/
+        cp -r ../include/ .
         tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib include
 
       
