@@ -1,10 +1,6 @@
 name: Build LLVM, V8, and SpiderMonkey
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 2 * * 1'  # Run weekly on Mondays at 2 AM UTC
