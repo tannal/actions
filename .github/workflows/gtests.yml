@@ -37,12 +37,7 @@ jobs:
         mkdir build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
         cmake --build . --config Release
-        pwd
-        ls
-        ls ../
-        ls ../include/
-        cp -r ../include/ .
-        tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib include
+        tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib ../googletest/include
 
       
     - name: Build GTest (Windows)
@@ -54,7 +49,7 @@ jobs:
         cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
         cmake --build . --config Release
-        7z a gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.zip .\lib\Release\* ..\include
+        7z a gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.zip .\lib\Release\* ..\googletest\include
 
     - name: Create Release
       id: create_release
