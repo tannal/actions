@@ -1,0 +1,72 @@
+name: Build and Release Google Test
+
+on:
+  workflow_dispatch:
+    pull_request:
+    branches: [main]
+
+  schedule:
+    - cron: '0 0 1 * *'  # Run monthly on the 1st day
+
+jobs:
+  build-and-release:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Get latest GTest version
+      id: gtest_version
+      run: |
+        LATEST_RELEASE=$(curl -s https://api.github.com/repos/google/googletest/releases/latest | jq -r .tag_name)
+        echo "::set-output name=version::$LATEST_RELEASE"
+      shell: bash
+
+    - name: Setup CMake
+      uses: lukka/get-cmake@latest
+
+    - name: Build GTest (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        git clone --depth 1 --branch ${{ steps.gtest_version.outputs.version }} https://github.com/google/googletest.git
+        cd googletest
+        mkdir build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+        cmake --build . --config Release
+        tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib include
+      
+    - name: Build GTest (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        git clone --depth 1 --branch ${{ steps.gtest_version.outputs.version }} https://github.com/google/googletest.git
+        cd googletest
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+        cmake --build . --config Release
+        7z a gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.zip .\lib\Release\* ..\include
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: gtest-${{ steps.gtest_version.outputs.version }}
+        release_name: Google Test ${{ steps.gtest_version.outputs.version }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./googletest/build/gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
+        asset_name: gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
+        asset_content_type: ${{ runner.os == 'Windows' && 'application/zip' || 'application/gzip' }}
