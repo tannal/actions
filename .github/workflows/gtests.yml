@@ -37,7 +37,9 @@ jobs:
         mkdir build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
         cmake --build . --config Release
-        tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib ../include
+        cp -r ../include .
+        tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib include
+
       
     - name: Build GTest (Windows)
       if: runner.os == 'Windows'
