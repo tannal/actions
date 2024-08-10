@@ -31,7 +31,8 @@ jobs:
         cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
         cmake --build . --config Release
         tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib ../googletest/include
-
+      shell: bash
+      
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
