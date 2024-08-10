@@ -35,7 +35,6 @@ jobs:
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
-      permissions: write-all
 
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,12 +44,11 @@ jobs:
         draft: false
         prerelease: false
 
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./googletest/build/gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
-        asset_name: gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
-        asset_content_type: ${{ runner.os == 'Windows' && 'application/zip' || 'application/gzip' }}
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: ${{ github.workspace }}-CHANGELOG.txt
+          repository: tannal/actions
+          # note you'll typically need to create a personal access token
+          # with permissions to create releases in the other repo
+          token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
