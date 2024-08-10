@@ -39,18 +39,6 @@ jobs:
         cmake --build . --config Release
         tar -czvf gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.tar.gz lib ../googletest/include
 
-      
-    - name: Build GTest (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        git clone --depth 1 --branch ${{ steps.gtest_version.outputs.version }} https://github.com/google/googletest.git
-        cd googletest
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
-        cmake --build . --config Release
-        7z a gtest-${{ steps.gtest_version.outputs.version }}-${{ runner.os }}.zip .\lib\Release\* ..\googletest\include
-
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
