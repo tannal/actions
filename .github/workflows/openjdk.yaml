@@ -1,0 +1,123 @@
+name: Build and Release OpenJDK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            name: linux
+          - os: macos-latest
+            name: macos
+          - os: windows-latest
+            name: windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up build environment
+      run: |
+        if [ "${{ runner.os }}" == "Linux" ]; then
+          sudo apt-get update
+          sudo apt-get install -y autoconf make build-essential libx11-dev libxext-dev libxrender-dev libxrandr-dev libxtst-dev libxt-dev libcups2-dev libfontconfig1-dev libasound2-dev
+        elif [ "${{ runner.os }}" == "macOS" ]; then
+          brew install autoconf
+        fi
+      shell: bash
+
+    - name: Set up build environment for Windows
+      if: runner.os == 'Windows'
+      run: |
+        choco install cygwin
+        choco install cyg-get
+        cyg-get autoconf make gcc-core
+
+    - name: Clone OpenJDK
+      run: |
+        git clone https://github.com/openjdk/jdk.git
+        cd jdk
+        git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
+      shell: bash
+
+    - name: Configure and Build OpenJDK
+      run: |
+        cd jdk
+        bash configure
+        make images
+      shell: bash
+
+    - name: Package OpenJDK
+      run: |
+        cd jdk/build/*/images
+        tar -czf ${{ github.workspace }}/openjdk-${{ matrix.name }}.tar.gz jdk
+      shell: bash
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: openjdk-${{ matrix.name }}
+        path: openjdk-${{ matrix.name }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v2
+
+    - name: Get or create release
+      id: get_or_create_release
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const fs = require('fs');
+          const { owner, repo } = context.repo;
+          const tag = `openjdk-${new Date().toISOString().split('T')[0]}`;
+          
+          try {
+            const release = await github.rest.repos.getReleaseByTag({
+              owner,
+              repo,
+              tag
+            });
+            console.log(`Release found: ${release.data.id}`);
+            return release.data;
+          } catch (error) {
+            if (error.status === 404) {
+              console.log('Release not found. Creating a new one.');
+              const release = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: `OpenJDK Release ${tag}`,
+                body: 'Automated OpenJDK release',
+                draft: false,
+                prerelease: false
+              });
+              return release.data;
+            }
+            throw error;
+          }
+
+    - name: Upload Release Assets
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        release_id=${{ fromJson(steps.get_or_create_release.outputs.result).id }}
+        for asset in openjdk-*/openjdk-*.tar.gz; do
+          echo "Uploading $asset..."
+          curl -H "Authorization: token $GITHUB_TOKEN" \
+               -H "Content-Type: application/gzip" \
+               --data-binary @"$asset" \
+               "https://uploads.github.com/repos/${{ github.repository }}/releases/$release_id/assets?name=$(basename "$asset")"
+        done
