@@ -13,8 +13,6 @@ jobs:
         include:
           - os: ubuntu-latest
             name: linux
-          - os: macos-latest
-            name: macos
           - os: windows-latest
             name: windows
 
