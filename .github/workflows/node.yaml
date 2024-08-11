@@ -1,0 +1,53 @@
+name: Build and Release Node.js
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [latest]
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+    
+    - name: Build Node.js
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 g++ make
+        git clone https://github.com/nodejs/node.git
+        cd node
+        ./configure
+        make -j$(nproc)
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ matrix.node-version }}-${{ github.sha }}
+        release_name: Node.js ${{ matrix.node-version }} Build
+        draft: false
+        prerelease: false
+    
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./node/out/Release/node
+        asset_name: node-${{ matrix.node-version }}-linux-x64
+        asset_content_type: application/octet-stream
